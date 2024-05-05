@@ -5,16 +5,30 @@
 
 class Memento {
 public:
-    virtual ~Memento() {}
+    virtual ~Memento() = default;
+};
+
+class TransactionToken {
+public:
+    std::thread::id owner = std::this_thread::get_id();
 };
 
 class LispElement {
 protected:
     std::shared_ptr<LispElement> root;
 public:
+    std::shared_ptr<TransactionToken> activeTransactionToken;
     mutable std::recursive_mutex mtx;
     virtual ~LispElement() = default;
     virtual void print() const = 0;
+    virtual void recursiveLock(const std::shared_ptr<TransactionToken>& token) {
+        mtx.lock();
+        activeTransactionToken = token;
+    }
+    virtual void recursiveUnlock() {
+        activeTransactionToken.reset();
+        mtx.unlock();
+    }
     void setRoot(const std::shared_ptr<LispElement>& rootElement) {
         root = rootElement;
     }
@@ -28,8 +42,8 @@ public:
 class AtomMemento : public Memento {
     std::string state;
 public:
-    AtomMemento(std::string state) : state(std::move(state)) {}
-    void restore(std::string& stateToRestore) {  // Rewritten to specifically work with string
+    explicit AtomMemento(std::string state) : state(std::move(state)) {}
+    void restore(std::string& stateToRestore) {
         stateToRestore = state;
     }
 };
@@ -44,7 +58,7 @@ protected:
 public:
     explicit Atom(std::string value) : value(std::move(value)) {}
     void print() const override {
-        std::lock_guard<std::recursive_mutex> lock(mtx);  // Lock when accessing value
+        std::lock_guard<std::recursive_mutex> lock(mtx);
         std::cout << value;
     }
     std::shared_ptr<Memento> createMemento() const override {
@@ -53,14 +67,13 @@ public:
     void setMemento(const std::shared_ptr<Memento>& memento) override {
         std::static_pointer_cast<AtomMemento>(memento)->restore(value);
     }
-
 };
 
 class ListMemento : public Memento {
     std::vector<std::shared_ptr<LispElement>> state;
 public:
-    ListMemento(const std::vector<std::shared_ptr<LispElement>>& state) : state(state) {}
-    void restore(std::vector<std::shared_ptr<LispElement>>& stateToRestore) {  // Rewritten to work with vector
+    explicit ListMemento(const std::vector<std::shared_ptr<LispElement>>& state) : state(state) {}
+    void restore(std::vector<std::shared_ptr<LispElement>>& stateToRestore) {
         stateToRestore = state;
     }
 };
@@ -68,7 +81,7 @@ public:
 class List : public LispElement {
 private:
     std::vector<std::shared_ptr<LispElement>> elements;
-    std::stack<std::shared_ptr<Memento>> history;
+    std::stack<std::shared_ptr<ListMemento>> history;
 public:
     explicit List(const std::shared_ptr<LispElement>& rootElement = nullptr) {
         setRoot(rootElement ? rootElement : std::shared_ptr<LispElement>(this, [](auto _){}));
@@ -100,20 +113,37 @@ public:
         return nullptr;
     }
 
-    void transactionStart() {
-        mtx.lock();  // Explicitly lock the current node
-        for (auto& elem : elements) {
-            elem->mtx.lock();  // Recursively lock all child elements
+    void transactionStart(){
+        if (activeTransactionToken) {
+            throw std::runtime_error("Transaction already active on this or a nested node");
         }
-        history.push(createMemento());
+        auto newToken = std::make_shared<TransactionToken>();
+        recursiveLock(newToken);
+        history.push(std::make_shared<ListMemento>(elements));
+    }
+
+    void recursiveLock(const std::shared_ptr<TransactionToken>& token) override {
+        if (activeTransactionToken) {
+            throw std::runtime_error("An existing transaction is already using this node");
+        }
+        mtx.lock();
+        activeTransactionToken = token;
+        for (auto& elem : elements) {
+            elem->recursiveLock(token);
+        }
+    }
+
+    void recursiveUnlock() override {
+        for (auto& elem : elements) {
+            elem->recursiveUnlock();
+        }
+        mtx.unlock();
+        activeTransactionToken.reset();
     }
 
     void transactionCommit() {
-        for (auto& elem : elements) {
-            elem->mtx.unlock();  // Recursively unlock all child elements
-        }
-        mtx.unlock();  // Unlock the current node
         if (!history.empty()) {
+            recursiveUnlock();
             history.pop();
         } else {
             throw std::runtime_error("No transaction to commit");
@@ -121,13 +151,11 @@ public:
     }
 
     void transactionRollback() {
-        for (auto& elem : elements) {
-            elem->mtx.unlock();
-        }
-        mtx.unlock();
         if (!history.empty()) {
-            setMemento(history.top());
+            std::shared_ptr<ListMemento> memento = history.top();
+            memento->restore(elements);
             history.pop();
+            recursiveUnlock();
         } else {
             throw std::runtime_error("No transaction to rollback");
         }
@@ -153,7 +181,6 @@ public:
 };
 
 
-
 int main() {
 
     auto root = std::make_shared<List>();
@@ -164,6 +191,11 @@ int main() {
     root->add(sublist);
     sublist->add(std::make_shared<Atom>("nested"));
     sublist->add(std::make_shared<Atom>("list"));
+
+    auto sublist2 = std::make_shared<List>(root->getRoot());
+    root->add(sublist2);
+    sublist2->add(std::make_shared<Atom>("nested"));
+    sublist2->add(std::make_shared<Atom>("list"));
 
     std::thread t1([&]{
         sublist->transactionStart();
@@ -177,17 +209,17 @@ int main() {
     });
 
     std::thread t2([&]{
-        sublist->transactionStart();
-        sublist->add(std::make_shared<Atom>("from"));
-        sublist->add(std::make_shared<Atom>("thread 2"));
-        sublist->transactionCommit();
+        sublist2->add(std::make_shared<Atom>("from"));
+        sublist2->transactionStart();
+        sublist2->add(std::make_shared<Atom>("thread 2"));
+        sublist2->transactionRollback();
     });
 
     t1.join();
     t2.join();
 
     std::cout << "\nRoot accessed from sublist: ";
-    sublist->getRoot()->print();  // Should print the whole structure
+    sublist->getRoot()->print();
     std::cout << std::endl;
     return 0;
 }
