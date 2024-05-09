@@ -6,6 +6,7 @@
 class Memento {
 public:
     virtual ~Memento() = default;
+    virtual void printHistory() const = 0;
 };
 
 class TransactionToken {
@@ -21,6 +22,9 @@ public:
     mutable std::recursive_mutex mtx;
     virtual ~LispElement() = default;
     virtual void print() const = 0;
+    virtual void printUnsafe() const = 0;
+    virtual void printAll() const = 0;
+    virtual void printAllUnsafe() const = 0;
     virtual void recursiveLock(const std::shared_ptr<TransactionToken>& token) {
         mtx.lock();
         activeTransactionToken = token;
@@ -46,6 +50,9 @@ public:
     void restore(std::string& stateToRestore) {
         stateToRestore = state;
     }
+    void printHistory() const override {
+        std::cout << state;
+    }
 };
 
 class Atom : public LispElement {
@@ -58,7 +65,17 @@ protected:
 public:
     explicit Atom(std::string value) : value(std::move(value)) {}
     void print() const override {
-        std::lock_guard<std::recursive_mutex> lock(mtx);
+        mtx.lock();
+        printUnsafe();
+        mtx.unlock();
+    }
+    void printUnsafe() const override {
+        std::cout << value;
+    }
+    void printAllUnsafe() const override {
+        std::cout << value;
+    }
+    void printAll() const override {
         std::cout << value;
     }
     std::shared_ptr<Memento> createMemento() const override {
@@ -76,6 +93,14 @@ public:
     void restore(std::vector<std::shared_ptr<LispElement>>& stateToRestore) {
         stateToRestore = state;
     }
+    void printHistory() const override {
+        std::cout << "(";
+        for (const auto& elem : state) {
+            elem->printUnsafe();
+            std::cout << " ";
+        }
+        std::cout << ")";
+    }
 };
 
 class List : public LispElement {
@@ -88,9 +113,10 @@ public:
     }
 
     void add(const std::shared_ptr<LispElement>& element) {
-        std::lock_guard<std::recursive_mutex> lock(mtx);  // Lock when modifying list
+        mtx.lock();
         element->setRoot(getRoot());
         elements.push_back(element);
+        mtx.unlock();
     }
 
     void insert(size_t index, const std::shared_ptr<LispElement>& element) {
@@ -113,7 +139,7 @@ public:
         return nullptr;
     }
 
-    void transactionStart(){
+    void transactionStart() {
         if (activeTransactionToken) {
             throw std::runtime_error("Transaction already active on this or a nested node");
         }
@@ -170,13 +196,34 @@ public:
     }
 
     void print() const override {
-        std::lock_guard<std::recursive_mutex> lock(mtx);
+        mtx.lock();
+        printUnsafe();
+        mtx.unlock();
+    }
+
+    void printUnsafe() const override {
         std::cout << "(";
         for (const auto& elem : elements) {
-            elem->print();
+            elem->printUnsafe();
             std::cout << " ";
         }
         std::cout << ")";
+    }
+
+    void printAll() const override {
+        mtx.lock();
+        std::cout << "[history: ";
+        printAllUnsafe();
+        std::cout << "]";
+        mtx.unlock();
+    }
+
+    void printAllUnsafe() const override {
+        for (const auto& elem : elements) {
+            elem->printAllUnsafe();
+            history.top()->printHistory();
+        }
+        printUnsafe();
     }
 };
 
@@ -193,32 +240,38 @@ int main() {
     sublist->add(std::make_shared<Atom>("list"));
 
     auto sublist2 = std::make_shared<List>(root->getRoot());
-    root->add(sublist2);
-    sublist2->add(std::make_shared<Atom>("nested"));
-    sublist2->add(std::make_shared<Atom>("list"));
-
+    sublist->add(sublist2);
+    sublist2->add(std::make_shared<Atom>("nested2"));
+    sublist2->add(std::make_shared<Atom>("list2"));
     std::thread t1([&]{
         sublist->transactionStart();
         sublist->add(std::make_shared<Atom>("thread 1"));
         std::this_thread::sleep_for(std::chrono::milliseconds(900));
         sublist->add(std::make_shared<Atom>("thread 1"));
-        std::cout << "\nRoot accessed from sublist: ";
-        sublist->getRoot()->print();  // Should print the whole structure
+        std::cout << "\nPrint after 1 thread: ";
+        sublist->getRoot()->print();
         std::cout << std::endl;
-        sublist->transactionCommit();
+        sublist->transactionRollback();
     });
 
     std::thread t2([&]{
         sublist2->add(std::make_shared<Atom>("from"));
         sublist2->transactionStart();
+        auto sublist3 = std::make_shared<List>(root->getRoot());
+        sublist3->add(std::make_shared<Atom>("thread2list3"));
+        sublist2->add(sublist3);
+        sublist3->remove(0);
+        sublist3->insert(0, std::make_shared<Atom>("thread2list4"));
         sublist2->add(std::make_shared<Atom>("thread 2"));
-        sublist2->transactionRollback();
+        std::cout << "\nPrint after 2 thread: ";
+        sublist->getRoot()->print();
+        std::cout << std::endl;
+        sublist2->transactionCommit();
     });
 
     t1.join();
     t2.join();
-
-    std::cout << "\nRoot accessed from sublist: ";
+    std::cout << "\nPrint after all threads: ";
     sublist->getRoot()->print();
     std::cout << std::endl;
     return 0;
