@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
-project(untitled)
+project(LispStructure)
 
 set(CMAKE_CXX_STANDARD 14)
 
-add_executable(untitled main.cpp)
+add_executable(LispStructure main.cpp)
