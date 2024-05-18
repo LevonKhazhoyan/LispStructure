@@ -16,10 +16,12 @@ public:
     virtual ~LispElement() = default;
     virtual void print() const = 0;
     virtual void printUnsafe() const = 0;
+    virtual std::string getValue() const = 0;
+    virtual std::shared_ptr<LispElement> getByIndex(size_t index) const = 0;
     virtual void recursiveLock(const std::shared_ptr<TransactionToken>& token);
     virtual void recursiveUnlock();
     void setRoot(const std::shared_ptr<LispElement>& rootElement);
-    std::shared_ptr<LispElement> getRoot() const;
+    virtual std::shared_ptr<LispElement> getRoot() const;
     virtual std::shared_ptr<Memento> createMemento() const = 0;
     virtual void setMemento(const std::shared_ptr<Memento>& memento) = 0;
 };

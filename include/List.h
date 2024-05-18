@@ -9,7 +9,7 @@
 #include <stack>
 #include <stdexcept>
 
-class List : public LispElement {
+class List : public LispElement, public std::enable_shared_from_this<List> {
 private:
     std::vector<std::shared_ptr<LispElement>> elements;
     std::stack<std::shared_ptr<ListMemento>> history;
@@ -19,7 +19,7 @@ public:
     void add(const std::shared_ptr<LispElement>& element);
     void insert(size_t index, const std::shared_ptr<LispElement>& element);
     void remove(size_t index);
-    std::shared_ptr<LispElement> get(size_t index);
+    std::shared_ptr<LispElement> getByIndex(size_t index) const override;
 
     void transactionStart();
     void transactionCommit();
@@ -28,6 +28,7 @@ public:
 protected:
     void recursiveLock(const std::shared_ptr<TransactionToken>& token) override;
     void recursiveUnlock() override;
+    std::string getValue() const override;
 
     std::shared_ptr<Memento> createMemento() const override;
     void setMemento(const std::shared_ptr<Memento>& memento) override;

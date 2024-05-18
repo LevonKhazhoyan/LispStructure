@@ -24,11 +24,15 @@ void List::remove(size_t index) {
     }
 }
 
-std::shared_ptr<LispElement> List::get(size_t index) {
+std::shared_ptr<LispElement> List::getByIndex(size_t index) const {
     if (index < elements.size()) {
         return elements[index];
     }
     return nullptr;
+}
+
+std::string List::getValue() const {
+    throw std::runtime_error("Not allowed operation");
 }
 
 void List::transactionStart() {
