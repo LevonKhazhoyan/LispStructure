@@ -67,12 +67,13 @@ TEST_CASE("Inner transaction works", "[transactionInner]") {
     std::thread t1([&]{
         sublist->transactionStart();
         sublist->add(std::make_shared<Atom>("threadOneBeforeSleep"));
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
         sublist->add(std::make_shared<Atom>("threadOneAfterSleep"));
         sublist->transactionRollback();
     });
 
     std::thread t2([&]{
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         sublist2->add(std::make_shared<Atom>("Before transaction"));
         sublist2->transactionStart();
         auto sublist3 = std::make_shared<List>(root->getRoot());
@@ -87,4 +88,71 @@ TEST_CASE("Inner transaction works", "[transactionInner]") {
 
     //just assert that nothing fails
     REQUIRE(root->getByIndex(0)->getByIndex(1)->getByIndex(2)->getByIndex(0)->getValue() == "threadTwo");
+}
+
+TEST_CASE("Add element to list", "[add]") {
+    //def
+    auto root = std::make_shared<List>();
+    auto sublist = std::make_shared<List>(root->getRoot());
+    root->add(sublist);
+    std::string expectedToBeInValue = "Hello";
+
+    //res
+    sublist->add(std::make_shared<Atom>(expectedToBeInValue));
+
+    //assert
+    REQUIRE(sublist->getByIndex(0)->getValue() == expectedToBeInValue);
+}
+
+
+TEST_CASE("Remove element from list", "[remove]") {
+    //def
+    auto root = std::make_shared<List>();
+    auto sublist = std::make_shared<List>(root->getRoot());
+    root->add(sublist);
+    std::string notExpectedToBeInValue = "Hello";
+
+    //res
+    sublist->add(std::make_shared<Atom>(notExpectedToBeInValue));
+    sublist->remove(0);
+    //assert
+    REQUIRE(sublist->getByIndex(0) == nullptr);
+}
+
+
+TEST_CASE("Get by index Test", "[getByIndex]") {
+    //def
+    auto root = std::make_shared<List>();
+    auto sublist = std::make_shared<List>(root->getRoot());
+    root->add(sublist);
+    std::string expectedInFstIndexValue = "first";
+    std::string expectedInSndIndexValue = "second";
+
+    //res
+    sublist->add(std::make_shared<Atom>(expectedInFstIndexValue));
+    sublist->add(std::make_shared<Atom>(expectedInSndIndexValue));
+
+    //assert
+    REQUIRE(sublist->getByIndex(0)->getValue() == expectedInFstIndexValue);
+    REQUIRE(sublist->getByIndex(1)->getValue() == expectedInSndIndexValue);
+}
+
+
+TEST_CASE("Precommit value should be in too", "[transactionCommit]") {
+    //def
+    auto root = std::make_shared<List>();
+    root->transactionStart();
+    auto sublist = std::make_shared<List>(root->getRoot());
+
+    root->add(sublist);
+    std::string expectedInFstIndexValue = "first";
+    std::string expectedInSndIndexValue = "second";
+
+    //res
+    sublist->add(std::make_shared<Atom>(expectedInFstIndexValue));
+    sublist->add(std::make_shared<Atom>(expectedInSndIndexValue));
+
+    //assert
+    REQUIRE(root->getByIndex(0)->getByIndex(0)->getValue() == expectedInFstIndexValue);
+    REQUIRE(root->getByIndex(0)->getByIndex(1)->getValue() == expectedInSndIndexValue);
 }
