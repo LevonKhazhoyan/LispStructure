@@ -39,7 +39,7 @@ TEST_CASE("Rollback test", "[transactionRollback]") {
     REQUIRE(returnedAtomAfterRollback == nullptr);
 }
 
-TEST_CASE("Get root test", "[transactionRollback]") {
+TEST_CASE("Get root test", "[getRoot]") {
     //def
     auto root = std::make_shared<List>();
     auto sublist = std::make_shared<List>(root->getRoot());
@@ -86,5 +86,5 @@ TEST_CASE("Inner transaction works", "[transactionInner]") {
     t2.join();
 
     //just assert that nothing fails
-    REQUIRE(root->getByIndex(0)->getByIndex(0)->getValue() == "nested");
+    REQUIRE(root->getByIndex(0)->getByIndex(1)->getByIndex(2)->getByIndex(0)->getValue() == "threadTwo");
 }
