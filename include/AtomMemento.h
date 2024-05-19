@@ -9,7 +9,6 @@ class AtomMemento : public Memento {
 public:
     explicit AtomMemento(std::string state);
     void restore(std::string& stateToRestore);
-    void printHistory() const override;
 };
 
 #endif // LISPSTRUCTURE_ATOM_MEMENTO_H

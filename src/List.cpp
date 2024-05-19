@@ -36,7 +36,7 @@ std::string List::getValue() const {
 }
 
 void List::transactionStart() {
-    if (activeTransactionToken) {
+    if (activeTransactionToken && activeTransactionToken->owner != std::this_thread::get_id()) {
         throw std::runtime_error("Transaction already active on this or a nested node");
     }
     auto newToken = std::make_shared<TransactionToken>();

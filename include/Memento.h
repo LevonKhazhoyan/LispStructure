@@ -4,7 +4,6 @@
 class Memento {
 public:
     virtual ~Memento() = default;
-    virtual void printHistory() const = 0;
 };
 
 #endif // LISPSTRUCTURE_MEMENTO_H

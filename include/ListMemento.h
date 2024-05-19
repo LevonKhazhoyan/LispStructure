@@ -12,7 +12,6 @@ class ListMemento : public Memento {
 public:
     explicit ListMemento(const std::vector<std::shared_ptr<LispElement>>& state);
     void restore(std::vector<std::shared_ptr<LispElement>>& stateToRestore);
-    void printHistory() const override;
 };
 
 #endif // LISPSTRUCTURE_LIST_MEMENTO_H
