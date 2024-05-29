@@ -17,9 +17,5 @@ add_library(lisp_structure_lib STATIC
 # Include headers for the library
 target_include_directories(lisp_structure_lib PUBLIC include)
 
-# Create executable linking with library
-add_executable(LispStructure main.cpp)
-target_link_libraries(LispStructure PRIVATE lisp_structure_lib)
-
 # Add the subdirectory containing tests
 add_subdirectory(tests)
